@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 150 5% 12%;
+    --foreground: 150 5% 95%;
+
+    --card: 150 5% 15%;
+    --card-foreground: 150 5% 95%;
+
+    --popover: 150 5% 15%;
+    --popover-foreground: 150 5% 95%;
+
+    --primary: 150 80% 25%;
+    --primary-foreground: 150 5% 98%;
+
+    --secondary: 150 5% 20%;
+    --secondary-foreground: 150 5% 95%;
+
+    --muted: 150 5% 22%;
+    --muted-foreground: 150 5% 60%;
+
+    --accent: 150 70% 30%;
+    --accent-foreground: 150 5% 98%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 150 5% 98%;
+
+    --border: 150 5% 25%;
+    --input: 150 5% 25%;
+    --ring: 150 80% 35%;
+
+    --radius: 0.75rem;
+
+    --sicredi-green: 150 100% 20%;
+    --sicredi-green-light: 150 80% 35%;
+    --sicredi-green-dark: 150 100% 15%;
+    --sicredi-gray: 150 5% 18%;
+    --sicredi-gray-light: 150 5% 30%;
+    
+    --gradient-sicredi: linear-gradient(135deg, hsl(var(--sicredi-green)) 0%, hsl(var(--sicredi-green-light)) 100%);
+    --shadow-sicredi: 0 10px 30px -10px hsl(var(--sicredi-green) / 0.3);
+    --glow-sicredi: 0 0 20px hsl(var(--sicredi-green-light) / 0.4);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
