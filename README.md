@@ -71,3 +71,21 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Excel import (gestores / associados)
+
+This app supports importing Excel files (.xlsx / .xls) containing gestores and associados data. The import expects a table with a header row. Recognized columns (case-insensitive, common variants accepted):
+
+- cod_agencia (or Agencia)
+- cod_carteira (or Carteira)
+- cpf_cpnj (or CPF, CNPJ)
+- tipo_pessoa (or Tipo)
+- contra_principal
+- des_segmento (or Segmento)
+- nom_gestor_carteira (or Gestor)
+- des_subsegmento (or Subsegmento)
+
+Notes:
+- Files with ~90k rows are processed in chunks to avoid blocking the UI. Large imports may still take time.
+- For best performance consider splitting very large files or moving processing to a Web Worker/server-side.
+- If import fails, check the header names and ensure the sheet data starts at the first row.

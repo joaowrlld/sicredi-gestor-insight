@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,8 +11,9 @@ export const DataImport = () => {
   const [importing, setImporting] = useState(false);
   const { importarDados } = useData();
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const processFile = async (file: File | null) => {
     if (!file) return;
 
     setImporting(true);
@@ -20,71 +21,54 @@ export const DataImport = () => {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
 
-      // Ler primeira planilha (assumindo que os dados estão na primeira aba)
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const rawData = XLSX.utils.sheet_to_json(sheet);
 
-      // Mapear gestores únicos
-      const gestoresMap = new Map();
-      const associadosProcessados: any[] = [];
+      // Expected column names (accept multiple variants)
+      const headerMapCandidates = {
+        cod_agencia: ["cod_agencia", "agencia", "Codigo Agencia", "Agencia", "codigo_agencia", "codAgencia"],
+        cod_carteira: ["cod_carteira", "carteira", "Carteira", "codigo_carteira", "codCarteira"],
+        cpf_cpnj: ["cpf_cpnj", "cpf_cnpj", "cpf", "cnpj", "Cpf/Cnpj", "CpfCnpj"],
+        tipo_pessoa: ["tipo_pessoa", "tipo", "tipoPessoa"],
+        contra_principal: ["contra_principal", "contra_principal", "contraprincipal"],
+        des_segmento: ["des_segmento", "segmento", "Segmento"],
+        nom_gestor_carteira: ["nom_gestor_carteira", "gestor", "nom_gestor", "Nom_Gestor_Carteira", "Gestor"],
+        des_subsegmento: ["des_subsegmento", "subsegmento", "Subsegmento"],
+      } as Record<string, string[]>;
 
-      rawData.forEach((row: any) => {
-        const gestorNome = row.gestor || row.Gestor;
-        const agencia = row.agencia || row.Agencia;
-        const carteira = row.carteira || row.Carteira;
-
-        // Processar classificação do associado
-        const classificacao = classificarAssociado({
-          nome: row.associado || row.Associado,
-          conta: String(row.conta || row.Conta || ""),
-          agencia,
-          gestor: gestorNome,
-          carteira,
-          segmento: row.segmento || row.Segmento,
-          subsegmento: row.subsegmento || row.Subsegmento,
-          renda: parseFloat(row.renda || row.Renda || 0),
-          investimentos: parseFloat(row.investimentos || row.Investimentos || 0),
-          idade: parseInt(row.idade || row.Idade || 0),
-        });
-
-        // Criar ID único para o gestor
-        const gestorKey = `${gestorNome}-${agencia}-${carteira}`;
-        
-        if (!gestoresMap.has(gestorKey)) {
-          gestoresMap.set(gestorKey, {
-            id: `gestor-${gestorKey}`,
-            nome: gestorNome,
-            agencia,
-            segmento: classificacao.segmento,
-            subsegmento: classificacao.subsegmento,
-            associadosAtuais: 0,
-            limiteIdeal: 0, // Será calculado com base no subsegmento
-          });
+      // Read header row to map columns
+      const range = XLSX.utils.decode_range(sheet['!ref'] || "A1:A1");
+      const headerRow = range.s.r; // start row
+      const headers: Record<number, string> = {};
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = { c: C, r: headerRow };
+        const cellRef = XLSX.utils.encode_cell(cellAddress);
+        const cell = sheet[cellRef];
+        if (cell && cell.v) {
+          headers[C] = String(cell.v).toString().trim();
         }
+      }
 
-        // Incrementar contador de associados
-        const gestor = gestoresMap.get(gestorKey);
-        gestor.associadosAtuais++;
-
-        // Adicionar associado
-        associadosProcessados.push({
-          id: `assoc-${Date.now()}-${Math.random()}`,
-          nome: row.associado || row.Associado,
-          conta: String(row.conta || row.Conta || ""),
-          segmento: classificacao.segmento,
-          subsegmento: classificacao.subsegmento,
-          gestorId: gestor.id,
-          agencia,
-          carteira,
-          renda: parseFloat(row.renda || row.Renda || 0),
-          investimentos: parseFloat(row.investimentos || row.Investimentos || 0),
-          idade: parseInt(row.idade || row.Idade || 0),
-          dataVinculo: new Date().toISOString(),
-        });
+      // Create a mapping from expected key -> actual column index
+      const headerIndexMap: Record<string, number | undefined> = {};
+      Object.entries(headerMapCandidates).forEach(([key, variants]) => {
+        for (const [colIndex, headerName] of Object.entries(headers)) {
+          const normalized = headerName.toLowerCase().replace(/\s|_|\//g, "");
+          if (variants.map(v => v.toLowerCase().replace(/\s|_|\//g, "")).includes(normalized)) {
+            headerIndexMap[key] = Number(colIndex);
+            break;
+          }
+        }
       });
 
-      // Definir limites ideais com base no subsegmento
+      // Fallback: if some required columns are missing, try reading by common names using sheet_to_json
+      const totalRows = range.e.r - headerRow; // approximate
+
+      // We'll process rows in chunks to avoid blocking UI
+      const CHUNK_SIZE = 5000; // adjustable
+      const associadosProcessados: any[] = [];
+      const gestoresMap = new Map<string, any>();
+
       const limitesPadrao: Record<string, number> = {
         "Ag I": 250,
         "Ag II": 200,
@@ -104,12 +88,85 @@ export const DataImport = () => {
         "E5": 90,
       };
 
+      const sheetJsonOpts = { header: 1 as const, raw: false };
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet, sheetJsonOpts) as any[];
+
+      // Remove header row
+      const dataRows = rows.slice(1);
+
+      let processed = 0;
+
+      while (processed < dataRows.length) {
+        const chunk = dataRows.slice(processed, processed + CHUNK_SIZE);
+
+        chunk.forEach((row: any) => {
+          // row is an array of cell values matching header columns
+          const getByKey = (key: string) => {
+            const idx = headerIndexMap[key];
+            if (typeof idx === 'number') return row[idx];
+            return undefined;
+          };
+
+          const agencia = getByKey('cod_agencia') || getByKey('agencia') || row[0];
+          const carteira = getByKey('cod_carteira') || getByKey('cod_carteira');
+          const gestorNome = getByKey('nom_gestor_carteira') || getByKey('nom_gestor') || row[0];
+
+          const classificacao = classificarAssociado({
+            nome: getByKey('cpf_cpnj') || row[0],
+            conta: String(getByKey('cod_carteira') || ""),
+            agencia,
+            gestor: gestorNome,
+            carteira,
+            segmento: getByKey('des_segmento') || undefined,
+            subsegmento: getByKey('des_subsegmento') || undefined,
+            renda: 0,
+            investimentos: 0,
+            idade: 0,
+          });
+
+          const gestorKey = `${gestorNome}-${agencia}-${carteira}`;
+          if (!gestoresMap.has(gestorKey)) {
+            gestoresMap.set(gestorKey, {
+              id: `gestor-${gestorKey}`,
+              nome: gestorNome,
+              agencia,
+              segmento: classificacao.segmento,
+              subsegmento: classificacao.subsegmento,
+              associadosAtuais: 0,
+              limiteIdeal: limitesPadrao[classificacao.subsegmento] || 100,
+            });
+          }
+
+          const gestor = gestoresMap.get(gestorKey);
+          gestor.associadosAtuais++;
+
+          associadosProcessados.push({
+            id: `assoc-${Date.now()}-${Math.random()}`,
+            nome: getByKey('cpf_cpnj') || '',
+            conta: String(getByKey('cod_carteira') || ''),
+            segmento: classificacao.segmento,
+            subsegmento: classificacao.subsegmento,
+            gestorId: gestor.id,
+            agencia,
+            carteira,
+            renda: 0,
+            investimentos: 0,
+            idade: 0,
+            dataVinculo: new Date().toISOString(),
+          });
+        });
+
+        processed += chunk.length;
+
+        // allow UI to update
+        await new Promise((res) => setTimeout(res, 0));
+      }
+
       const gestores = Array.from(gestoresMap.values()).map((gestor: any) => ({
         ...gestor,
-        limiteIdeal: limitesPadrao[gestor.subsegmento] || 100,
+        limiteIdeal: gestor.limiteIdeal || limitesPadrao[gestor.subsegmento] || 100,
       }));
 
-      // Calcular agências
       const agenciasMap = new Map();
       gestores.forEach((gestor: any) => {
         if (!agenciasMap.has(gestor.agencia)) {
@@ -149,6 +206,29 @@ export const DataImport = () => {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    await processFile(file);
+    // clear input so same file can be selected again if needed
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer.files?.[0] || null;
+    await processFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const openFileDialog = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
   return (
     <Card className="border-primary/20 bg-card">
       <CardHeader>
@@ -162,23 +242,30 @@ export const DataImport = () => {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-col gap-4">
-          <div className="rounded-lg border-2 border-dashed border-primary/30 p-8 text-center hover:border-primary/50 transition-colors">
+          <div
+            className="rounded-lg border-2 border-dashed border-primary/30 p-8 text-center hover:border-primary/50 transition-colors"
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragOver}
+            onDragLeave={(e) => e.preventDefault()}
+          >
             <input
+              ref={fileInputRef}
               type="file"
               accept=".xlsx,.xls"
               onChange={handleFileUpload}
               className="hidden"
               id="file-upload"
             />
-            <label htmlFor="file-upload" className="cursor-pointer">
+            <div className="cursor-pointer" onClick={openFileDialog} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') openFileDialog(); }}>
               <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
               <p className="text-sm text-muted-foreground mb-2">
                 Clique para selecionar ou arraste o arquivo aqui
               </p>
-              <Button type="button" variant="secondary" disabled={importing}>
+              <Button type="button" variant="secondary" disabled={importing} onClick={openFileDialog}>
                 {importing ? "Importando..." : "Selecionar Arquivo"}
               </Button>
-            </label>
+            </div>
           </div>
 
           <div className="rounded-lg bg-muted/50 p-4 space-y-2">
