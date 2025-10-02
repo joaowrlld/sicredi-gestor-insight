@@ -5,6 +5,7 @@ import { DataProvider } from "@/contexts/DataContext";
 import { VisaoCooperativa } from "@/components/VisaoCooperativa";
 import { VisaoAgencia } from "@/components/VisaoAgencia";
 import { RealocacaoAssociados } from "@/components/RealocacaoAssociados";
+import MatrizRealocacao from "@/components/MatrizRealocacao";
 import { Movimentacoes } from "@/components/Movimentacoes";
 import { Configuracoes } from "@/components/Configuracoes";
 import { DataImport } from "@/components/DataImport";
@@ -30,7 +31,7 @@ const Index = () => {
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-sicredi bg-clip-text text-transparent">
-                  Sistema de Monitoramento Sicredi
+                  Experiência do Associado | Encarteiramento
                 </h1>
                 <p className="text-sm text-muted-foreground">
                   Gestão Inteligente de Carteiras e Associados
@@ -43,7 +44,7 @@ const Index = () => {
         {/* Main Content */}
         <main className="container mx-auto px-4 py-8">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-6 bg-card border border-border">
+            <TabsList className="grid w-full grid-cols-7 bg-card border border-border">
               <TabsTrigger value="cooperativa" className="data-[state=active]:bg-gradient-sicredi data-[state=active]:text-white">
                 <Building2 className="h-4 w-4 mr-2" />
                 Cooperativa
@@ -55,6 +56,10 @@ const Index = () => {
               <TabsTrigger value="realocacao" className="data-[state=active]:bg-gradient-sicredi data-[state=active]:text-white">
                 <ArrowRightLeft className="h-4 w-4 mr-2" />
                 Realocação
+              </TabsTrigger>
+              <TabsTrigger value="matriz" className="data-[state=active]:bg-gradient-sicredi data-[state=active]:text-white">
+                <Users className="h-4 w-4 mr-2" />
+                Matriz
               </TabsTrigger>
               <TabsTrigger value="movimentacoes" className="data-[state=active]:bg-gradient-sicredi data-[state=active]:text-white">
                 <History className="h-4 w-4 mr-2" />
@@ -80,6 +85,10 @@ const Index = () => {
 
             <TabsContent value="realocacao">
               <RealocacaoAssociados />
+            </TabsContent>
+
+            <TabsContent value="matriz">
+              <MatrizRealocacao />
             </TabsContent>
 
             <TabsContent value="movimentacoes">

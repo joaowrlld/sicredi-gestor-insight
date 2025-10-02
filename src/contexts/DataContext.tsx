@@ -22,6 +22,7 @@ interface DataContextType {
   updateDimensionamento: (config: DimensionamentoConfig[]) => void;
   realocarAssociados: (associadoIds: string[], gestorNovoId: string, motivo?: string) => void;
   importarDados: (dados: any) => void;
+  seedMockData?: () => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -135,6 +136,62 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (dados.agencias) setAgencias(dados.agencias);
   };
 
+  const seedMockData = () => {
+    // Simple mock with 3 gestores, 2 agencias, several subsegmentos and ~30 associados
+    const mockGestores = [
+      { id: 'g-1', nome: 'Carlos Silva', agencia: '001', segmento: 'PF', subsegmento: 'PF I', associadosAtuais: 0, limiteIdeal: 2500 },
+      { id: 'g-2', nome: 'Ana Pereira', agencia: '001', segmento: 'PF', subsegmento: 'PF II', associadosAtuais: 0, limiteIdeal: 2500 },
+      { id: 'g-3', nome: 'João Souza', agencia: '002', segmento: 'PJ', subsegmento: 'E1', associadosAtuais: 0, limiteIdeal: 500 },
+    ];
+
+    const mockAssociados: any[] = [];
+    const subseg = ['PF I', 'PF II', 'PF III'];
+    let idx = 1;
+    for (let g of mockGestores) {
+      // create 10 associados per gestor
+      for (let i = 0; i < 10; i++) {
+        const s = subseg[i % subseg.length];
+        mockAssociados.push({
+          id: `a-${g.id}-${i}`,
+          nome: `Assoc ${idx}`,
+          conta: `${1000 + idx}`,
+          segmento: g.segmento,
+          subsegmento: s,
+          gestorId: g.id,
+          agencia: g.agencia,
+          carteira: 'C1',
+          renda: 0,
+          investimentos: 0,
+          idade: 30 + (i % 10),
+          dataVinculo: new Date().toISOString(),
+        });
+        idx++;
+      }
+    }
+
+    // Update gestores associadosAtuais counts
+    const gestoresAtualizados = mockGestores.map((g) => ({
+      ...g,
+      associadosAtuais: mockAssociados.filter((a) => a.gestorId === g.id).length,
+    }));
+
+    const agenciasMock = [
+      { id: 'ag-001', nome: '001', gestores: gestoresAtualizados.filter(g => g.agencia === '001'), totalAssociados: 0, segmentos: { Agro: 0, PF: 0, PJ: 0 } },
+      { id: 'ag-002', nome: '002', gestores: gestoresAtualizados.filter(g => g.agencia === '002'), totalAssociados: 0, segmentos: { Agro: 0, PF: 0, PJ: 0 } },
+    ];
+
+    agenciasMock.forEach((ag) => {
+      ag.totalAssociados = ag.gestores.reduce((s: number, g: any) => s + g.associadosAtuais, 0);
+      ag.gestores.forEach((g: any) => {
+        ag.segmentos[g.segmento] = (ag.segmentos[g.segmento] || 0) + g.associadosAtuais;
+      });
+    });
+
+    setGestores(gestoresAtualizados as any);
+    setAssociados(mockAssociados as any);
+    setAgencias(agenciasMock as any);
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -149,7 +206,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addMovimentacao,
         updateDimensionamento,
         realocarAssociados,
-        importarDados,
+          importarDados,
+          seedMockData,
       }}
     >
       {children}
